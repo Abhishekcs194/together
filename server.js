@@ -22,6 +22,15 @@ const MIME = {
   '.png': 'image/png',
 };
 
+const ASSET_LINKS = [{
+  relation: ['delegate_permission/common.handle_all_urls'],
+  target: {
+    namespace: 'android_app',
+    package_name: 'io.github.abhishekcs194.together',
+    sha256_cert_fingerprints: ['15:75:58:53:51:03:E5:E6:A6:43:1D:24:4A:0E:E6:41:91:7E:7B:ED:6F:83:2D:40:23:9C:2F:E0:BE:F2:19:D3'],
+  },
+}];
+
 /** @type {Map<string, Room>} */
 const rooms = new Map();
 
@@ -29,7 +38,7 @@ function newRoom(id) {
   return {
     id,
     members: new Map(), // clientId -> { ws, name }
-    state: { url: '', title: '', proxy: false, paused: true, pos: 0, at: Date.now(), seq: 0, autoPaused: false },
+    state: { url: '', title: '', proxy: false, source: null, loadedBy: '', loadedById: '', paused: true, pos: 0, at: Date.now(), seq: 0, autoPaused: false },
     holds: new Set(), // clientIds currently buffering
     history: [], // last chat messages
     emptySince: Date.now(),
@@ -83,6 +92,23 @@ function updateHolds(room, by) {
   }
 }
 
+// What was picked from the catalogue, so each phone can fetch the same file from its own debrid account.
+function cleanSource(src) {
+  if (!src || typeof src !== 'object') return null;
+  const str = (v, n = 200) => (v == null ? '' : String(v).slice(0, n));
+  const id = str(src.id, 60);
+  if (!/^tt\d+(:\d+:\d+)?$/.test(id)) return null;
+  return {
+    type: src.type === 'series' ? 'series' : 'movie',
+    id,
+    infoHash: /^[a-f0-9]{40}$/i.test(src.infoHash) ? src.infoHash.toLowerCase() : '',
+    fileIdx: Number.isInteger(src.fileIdx) ? src.fileIdx : null,
+    filename: str(src.filename, 300),
+    bingeGroup: str(src.bingeGroup),
+    poster: /^https:\/\//.test(src.poster) ? str(src.poster, 500) : '',
+  };
+}
+
 function handle(ws, room, me, msg) {
   switch (msg.t) {
     case 'ping':
@@ -92,12 +118,23 @@ function handle(ws, room, me, msg) {
       const url = String(msg.url || '').trim();
       if (!/^https?:\/\//i.test(url)) return send(ws, { t: 'error', message: 'That does not look like a stream link.' });
       room.holds.clear();
-      return setState(room, { url, title: String(msg.title || '').slice(0, 200), proxy: !!msg.proxy, paused: true, pos: 0, autoPaused: false }, me);
+      return setState(room, {
+        url,
+        title: String(msg.title || '').slice(0, 200),
+        proxy: !!msg.proxy,
+        source: cleanSource(msg.source),
+        loadedBy: nameOf(room, me),
+        loadedById: me,
+        paused: true,
+        pos: 0,
+        autoPaused: false,
+      }, me);
     }
 
     case 'ctl': {
       const pos = Math.max(0, Number(msg.pos) || 0);
-      if (msg.action === 'play') return setState(room, { paused: false, pos, autoPaused: false }, me);
+      // Someone is still loading: start automatically once everyone is ready.
+      if (msg.action === 'play') return setState(room, { paused: !!room.holds.size, pos, autoPaused: !!room.holds.size }, me);
       if (msg.action === 'pause') return setState(room, { paused: true, pos, autoPaused: false }, me);
       if (msg.action === 'seek') return setState(room, { pos }, me);
       return;
@@ -216,6 +253,11 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ id: crypto.randomBytes(6).toString('base64url') }));
   }
   if (pathname === '/healthz') return res.writeHead(200).end('ok');
+  if (pathname === '/.well-known/assetlinks.json') {
+    // Lets the Android app (a Trusted Web Activity) open this site full-screen, without Chrome's URL bar.
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify(ASSET_LINKS));
+  }
   const m = pathname.match(/^\/stream\/([\w-]{4,40})$/);
   if (m) return proxy(req, res, m[1]);
   serveStatic(req, res, pathname);

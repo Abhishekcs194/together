@@ -1,2 +1,17 @@
 node_modules
 .env
+
+# Android TWA wrapper
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/keystore.properties
+android/*.jks
+android/*.keystore
+android/captures/
+android/.idea/
+android/*.iml
+
+# Build outputs
+dist/

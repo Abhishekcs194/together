@@ -180,20 +180,58 @@ function expected() {
 function applyState(s, by) {
   const prev = state;
   state = s;
-  const src = s.url ? (s.proxy ? `/stream/${roomId}?v=${s.seq}` : s.url) : '';
   if (s.url + s.proxy !== loadedUrl) {
     loadedUrl = s.url + s.proxy;
-    setBuffering(false);
     noAudioWarned = false;
-    if (src) { video.src = src; video.load(); } else video.removeAttribute('src');
+    loadSource(s);
     document.title = s.title ? `${s.title} · Together` : 'Together';
+    $('#nowTitle').textContent = s.title || '';
     setupMediaSession();
+    Subs.load(s.source);
   }
   $('#empty').hidden = !!s.url;
+  $('#nextBtn').hidden = s.source?.type !== 'series';
   updatePlayIcon();
   showNotice();
   sync(prev?.seq !== s.seq);
   keepAwake(!s.paused);
+}
+
+// Work out what this phone should actually play. If it has its own addon, fetch the same file through
+// its own debrid account; otherwise play the link the other person picked.
+let sourceSeq = 0;
+async function loadSource(s) {
+  const seq = ++sourceSeq;
+  video.removeAttribute('src');
+  video.load();
+  buffering = false; // the server forgets everyone's buffering state when a new video loads
+  if (!s.url) return;
+  setBuffering(true, true); // hold playback for both until this phone has the video ready
+  let src = s.url, how = 'direct';
+  if (s.proxy) {
+    src = `/stream/${roomId}?v=${s.seq}`;
+  } else if (s.loadedById === clientId) {
+    how = 'mine';
+  } else if (s.source && Addon.base) {
+    showNotice('Getting the same file from your own account…');
+    try {
+      const own = await resolveOwn(s.source);
+      if (own) { src = own; how = 'own'; } else how = 'notfound';
+    } catch {
+      how = 'notfound';
+    }
+  } else if (s.source || /\/resolve\/|real-debrid|alldebrid|premiumize|debrid-link|torbox/i.test(s.url)) {
+    how = 'shared';
+  }
+  if (seq !== sourceSeq) return;
+  showNotice();
+  const picked = s.loadedById !== clientId ? `${s.loadedBy} picked ${s.title || 'something'}. ` : '';
+  if (how === 'own') toast(`${picked}Streaming from your own ${Addon.name || 'addon'}`, 4000);
+  else if (how === 'notfound') toast(`${picked}Your addon doesn’t have this exact file, so this phone is playing ${s.loadedBy}’s link instead`, 6000);
+  else if (how === 'shared') toast(`${picked}Playing ${s.loadedBy}’s debrid link. Connect your own Torrentio in Setup to keep their account safe.`, 7000);
+  else if (picked) toast(picked.trim());
+  video.src = src;
+  video.load();
 }
 
 function sync(force) {
@@ -243,11 +281,11 @@ function tick() {
   checkAudio();
 }
 
-function setBuffering(on) {
+function setBuffering(on, loading = false) {
   clearTimeout(bufTimer);
   if (on === buffering) return;
   buffering = on;
-  send({ t: 'buffering', on });
+  send({ t: 'buffering', on, loading });
 }
 video.addEventListener('waiting', () => {
   clearTimeout(bufTimer);
@@ -259,7 +297,8 @@ for (const ev of ['canplay', 'playing']) video.addEventListener(ev, () => setBuf
 video.addEventListener('loadedmetadata', () => { $('#seek').max = video.duration || 0; sync(true); });
 video.addEventListener('seeked', () => sync(false));
 video.addEventListener('error', () => {
-  if (!state?.url) return;
+  if (!state?.url || !video.getAttribute('src')) return;
+  setBuffering(false);
   const code = video.error?.code;
   const msg = code === 4
     ? 'this phone can’t play this file. Pick another stream (MP4, H.264, AAC are safest).'
@@ -283,16 +322,21 @@ function checkAudio() {
 
 function describeChange(prev, s, by) {
   const who = nameOfId(by);
-  if (!prev || prev.url !== s.url) return toast(`${who} loaded ${s.title || 'a movie'}`);
+  if (!prev || prev.url !== s.url) return; // loadSource() announces new videos
   if (s.autoPaused || prev.autoPaused) return;
   if (prev.paused !== s.paused) return toast(s.paused ? `${who} paused` : `${who} pressed play`);
   if (Math.abs(prev.pos - s.pos) > 2 || prev.paused === s.paused) toast(`${who} jumped to ${fmt(s.pos)}`);
 }
 
-function showNotice() {
+let noticeText = '';
+function showNotice(text) {
+  if (text !== undefined) noticeText = text;
   const el = $('#notice');
   const others = holds.filter((n) => n !== myName);
-  if (state?.autoPaused && holds.length) {
+  if (noticeText) {
+    el.textContent = noticeText;
+    el.hidden = false;
+  } else if (state?.autoPaused && holds.length) {
     el.textContent = others.length ? `Waiting for ${others.join(', ')} to buffer…` : 'Buffering…';
     el.hidden = false;
   } else el.hidden = true;
@@ -369,6 +413,23 @@ $('#chatToggle').addEventListener('click', () => {
   $('#unread').hidden = true;
 });
 
+$('#nextBtn').addEventListener('click', async () => {
+  const src = state?.source;
+  if (src?.type !== 'series') return;
+  if (!Addon.base) return toast('Connect your Torrentio in Setup to pick episodes');
+  toast('Finding the next episode…');
+  try {
+    const { meta, next, id, stream } = await nextEpisode(src);
+    if (!next) return toast('That was the last episode');
+    if (stream) return send({ t: 'load', url: stream.url, title: episodeTitle(meta.name, next), proxy: false, source: sourceOf(stream, { type: 'series', id, poster: meta.poster }) });
+    // No stream from the same release; let them choose.
+    Browse.open('search');
+    Browse.openStreams({ type: 'series', id, title: episodeTitle(meta.name, next), poster: meta.poster });
+  } catch (err) {
+    toast(err.message);
+  }
+});
+
 // Keep the screen on during the movie.
 let wakeLock = null;
 async function keepAwake(on) {
@@ -387,24 +448,23 @@ document.addEventListener('visibilitychange', () => keepAwake(state && !state.pa
 // Lock-screen / headset buttons control playback for both of you.
 function setupMediaSession() {
   if (!('mediaSession' in navigator)) return;
-  navigator.mediaSession.metadata = new MediaMetadata({ title: state?.title || 'Together', artist: 'Watching together' });
+  const poster = state?.source?.poster;
+  navigator.mediaSession.metadata = new MediaMetadata({ title: state?.title || 'Together', artist: 'Watching together', artwork: poster ? [{ src: poster }] : [] });
   navigator.mediaSession.setActionHandler('play', () => state?.url && control('play', video.currentTime));
   navigator.mediaSession.setActionHandler('pause', () => state?.url && control('pause', video.currentTime));
 }
 
 // ---------- loading a movie ----------
 function openLoad(prefill = '') {
-  $('#urlInput').value = prefill;
-  $('#titleInput').value = '';
-  checkUrl();
-  $('#loadDialog').showModal();
-  if (!prefill) navigator.clipboard?.readText?.().then((t) => {
-    if (/^https?:\/\//.test(t.trim()) && !$('#urlInput').value) { $('#urlInput').value = t.trim(); checkUrl(); }
-  }).catch(() => {});
+  if (prefill) {
+    $('#urlInput').value = prefill;
+    $('#titleInput').value = '';
+    return Browse.open('paste');
+  }
+  Browse.open();
 }
 $('#loadBtn').addEventListener('click', () => openLoad());
 $('#emptyLoadBtn').addEventListener('click', () => openLoad());
-$('#loadCancel').addEventListener('click', () => $('#loadDialog').close());
 $('#urlInput').addEventListener('input', checkUrl);
 
 function checkUrl() {
@@ -426,9 +486,10 @@ $('#loadForm').addEventListener('submit', (e) => {
   }
   send({ t: 'load', url, title, proxy: $('#proxyInput').checked });
   store.set('tg.proxy', $('#proxyInput').checked ? '1' : '0');
-  $('#loadDialog').close();
+  $('#urlInput').value = '';
+  $('#browse').close();
 });
-$('#proxyInput').checked = store.get('tg.proxy', '1') === '1';
+$('#proxyInput').checked = store.get('tg.proxy', '0') === '1';
 
 function maybeLoadPending() {
   const pending = store.get('tg.pending');

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Together" parent="android:Theme.DeviceDefault.NoActionBar">
+        <item name="android:statusBarColor">@color/colorPrimary</item>
+        <item name="android:navigationBarColor">@color/navigationColor</item>
+        <item name="android:windowBackground">@color/backgroundColor</item>
+        <item name="android:colorBackground">@color/backgroundColor</item>
+    </style>
+
+    <style name="Theme.Together.Splash" parent="Theme.Together">
+        <item name="android:windowBackground">@color/backgroundColor</item>
+    </style>
+</resources>

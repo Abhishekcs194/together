@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Together</string>
+    <string name="launch_url" translatable="false">https://together-i1b2.onrender.com/</string>
+
+    <string name="asset_statements" translatable="false">
+        [{
+          \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+          \"target\": {
+            \"namespace\": \"web\",
+            \"site\": \"https://together-i1b2.onrender.com\"
+          }
+        }]
+    </string>
+
+    <string name="share_target" translatable="false">
+        {
+          \"action\": \"https://together-i1b2.onrender.com/share\",
+          \"method\": \"GET\",
+          \"params\": {
+            \"title\": \"title\",
+            \"text\": \"text\",
+            \"url\": \"url\"
+          }
+        }
+    </string>
+</resources>

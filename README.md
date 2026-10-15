@@ -5,43 +5,51 @@ A private, two-person watch party. Both phones play the **same video file direct
 ## How it works
 
 ```
- Stremio (debrid link) ──paste/share──▶ Together room
-                                            │  play / pause / seek / chat / call signalling (tiny)
-               ┌────────────────────────────┴────────────────────────────┐
-           your phone ◀──────── WebRTC call (direct, phone to phone) ────────▶ her phone
-               │                                                         │
-               └──────── video bytes (original file, full quality) ──────┘
-                          from debrid, optionally via this server
+                 Cinemeta (search, posters, episodes) + OpenSubtitles (subtitles)
+                                   │
+  your phone ── your Torrentio+debrid ──▶ your link ─┐        ┌─ her link ◀── her Torrentio+debrid ── her phone
+                                                     ▼        ▼
+                            same file, original quality, each from their own account/IP
+                                                     │
+          Together server: play / pause / seek / chat / call signalling only (tiny)
+                                                     │
+                          WebRTC voice/video call, directly phone to phone
 ```
 
-- **Sync:** the server holds the room's playback state against a shared clock. Each phone corrects small drift by speeding up or slowing down slightly (0.94× to 1.06×), and makes a hard seek only for big jumps.
-- **Buffering:** if either phone stalls, both pause ("Waiting for Riya to buffer…") and resume together.
-- **Reconnects:** if a phone backgrounds or drops signal, it rejoins the same room automatically and catches up.
-- **Call:** the camera runs at low resolution and frame rate (480p / 20fps) so the movie gets most of the bandwidth. Either person can start it; the other taps the camera button to join.
+- **Picking:** search inside the app. You get the same stream list Torrentio gives Stremio (quality, size, `[RD+]` cached), sorted so streams that play **with sound** in a browser come first. DTS/AC3/TrueHD audio is flagged "may be silent".
+- **Each phone uses its own debrid:** the room shares *which file* (torrent hash). A phone with its own Torrentio link fetches that same file through its own account. Without one, it plays the picker's link and warns that the debrid service may flag account sharing.
+- **Sync:** the server holds the playback state against a shared clock. Phones correct small drift by playing slightly faster or slower (0.94× to 1.06×), and seek only for big jumps. Pressing play waits until both phones have the video ready. If either stalls, both pause and resume together.
+- **Subtitles:** chosen per person from Stremio's OpenSubtitles addon, with ±0.5s timing nudges. Your choice of language is remembered.
+- **Series:** season/episode picker. **Next episode** keeps the same release (quality/encoder), like Stremio's binge-watching.
+- **Reconnects:** if a phone backgrounds or drops signal, it rejoins and catches up.
+- **Call:** low-res camera (480p / 20fps) so the movie gets the bandwidth. Either person starts it; the other taps the camera button to join.
 
-## Using it
+## First-time setup (each of you, once)
 
-1. Open the site, enter a name and tap **Start a room**. Tap the top-left pill to share the invite link.
-2. She opens the link, enters her name and taps **Join the room**. On Android, ⋮ → *Add to Home screen* installs it as an app.
-3. In Stremio, pick a movie and choose a **debrid stream** (e.g. `[RD+]`), then copy its stream link. If installed, Together also appears in Android's **Share** menu.
-4. Tap the link icon, paste, then **Load for both**, then ▶.
+1. Install: **Android app** (`dist/Together.apk`, see below), or open the site in Chrome → ⋮ → *Install app*.
+2. Open 🔍 → **Setup**. Follow the three steps: on torrentio.strem.fun/configure, pick your debrid service and paste its API key, tap **Copy link**, then paste it into Together.
+   The setup link stays on that phone. Note that a **stream link** you pick also has your debrid key inside it (Torrentio builds it that way). It passes through the room, in memory only and never logged, so the other phone can fall back to it. Only connect your account in rooms you share with someone you trust.
 
-Earphones help: they keep the movie audio out of the call mic.
+## Movie night
 
-### Picking a stream that plays in a browser
+1. One of you taps **Start a room** and shares the invite (top-left pill). The other opens it and taps **Join the room**.
+2. 🔍 → search → pick a movie (or show → season → episode) → pick a stream. It loads paused for both of you.
+3. ▶. Use CC for subtitles and the camera button for the call. Earphones keep the movie out of the call mic.
 
-Phone browsers can't decode every format:
+A **Paste link** tab is still there for any direct video link.
 
-| Works everywhere | Often fails |
-|---|---|
-| MP4 / MKV with **H.264** video + **AAC** audio | **DTS, AC3, EAC3, TrueHD** audio (video plays, **no sound**) |
-| HEVC/H.265 on most recent Android phones | Dolby Vision-only, AV1 on older phones |
+## Android app
 
-The app detects the "plays but silent" case and warns both of you. If that happens, pick a different stream (look for `AAC`, `x264`, or "WEB-DL" release names).
+`android/` is a Trusted Web Activity: a thin wrapper that opens the site in the phone's real Chrome engine, full screen, so calls, fullscreen and share-to work exactly as in Chrome. The server publishes `/.well-known/assetlinks.json` with the signing-key fingerprint, so Chrome hides its URL bar.
 
-### The "Stream through our server" checkbox
+```
+cd android && JAVA_HOME=~/.local/jdk17 ANDROID_HOME=~/.local/android-sdk ./gradlew :app:assembleRelease \
+  && cp app/build/outputs/apk/release/app-release.apk ../dist/Together.apk
+```
 
-Real-Debrid and most debrid services ban accounts that stream from **two IPs at once**. With the box ticked, the server fetches the file once per viewer from its single IP and relays the bytes untouched, with no re-encoding. The costs: it uses the server's bandwidth (around 2× the file size per movie), and a slow server means slow starts. Untick it if your debrid service allows multiple IPs or she has her own account.
+Web changes need **no** new APK, because the app always loads the live site. Rebuild only to change the icon, name or package.
+
+⚠️ `android/together-release.jks` and `android/keystore.properties` are deliberately not in git. **Back them up.** Without them you can't ship an update that installs over the existing app.
 
 ## Deploy (Render)
 
