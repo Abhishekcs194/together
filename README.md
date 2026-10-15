@@ -2,6 +2,8 @@
 
 A private, two-person watch party. Both phones play the **same video file directly at full quality**, kept in sync to within a fraction of a second, with a built-in voice/video call, chat and emoji reactions. Nothing is screen-shared or re-encoded.
 
+**Developers: start with [HANDOVER.md](HANDOVER.md)** (setup on a new machine, moving hosting, Android build, tests, decisions).
+
 ## How it works
 
 ```

@@ -61,7 +61,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https"
-                    android:host="together-i1b2.onrender.com" />
+                    android:host="${togetherHost}" />
             </intent-filter>
 
             <intent-filter>

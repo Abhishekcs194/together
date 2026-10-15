@@ -8,6 +8,8 @@ if (keystorePropertiesFile.exists()) {
     keystorePropertiesFile.withInputStream { keystoreProperties.load(it) }
 }
 
+def togetherHost = project.findProperty('togetherHost') ?: 'together-i1b2.onrender.com'
+
 android {
     namespace 'io.github.abhishekcs194.together'
     compileSdk 36
@@ -18,6 +20,14 @@ android {
         targetSdk 36
         versionCode 1
         versionName "1.0.0"
+
+        // Everything that names the site comes from gradle.properties → togetherHost.
+        manifestPlaceholders = [togetherHost: togetherHost]
+        resValue 'string', 'launch_url', "https://${togetherHost}/"
+        resValue 'string', 'asset_statements',
+            "[{\\\"relation\\\": [\\\"delegate_permission/common.handle_all_urls\\\"], \\\"target\\\": {\\\"namespace\\\": \\\"web\\\", \\\"site\\\": \\\"https://${togetherHost}\\\"}}]"
+        resValue 'string', 'share_target',
+            "{\\\"action\\\": \\\"https://${togetherHost}/share\\\", \\\"method\\\": \\\"GET\\\", \\\"params\\\": {\\\"title\\\": \\\"title\\\", \\\"text\\\": \\\"text\\\", \\\"url\\\": \\\"url\\\"}}"
     }
 
     signingConfigs {

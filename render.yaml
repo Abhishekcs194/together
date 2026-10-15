@@ -1,0 +1,21 @@
+# Render Blueprint: recreates the Together web service on any Render account.
+# Render dashboard → New → Blueprint → pick this repo → Apply.
+services:
+  - type: web
+    name: together
+    runtime: node
+    plan: free            # sleeps after ~15 min idle; "starter" stays awake
+    region: frankfurt
+    branch: master
+    buildCommand: npm ci
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Optional TURN relay for calls on strict mobile networks (Cloudflare Realtime TURN).
+      - key: CF_TURN_KEY_ID
+        sync: false
+      - key: CF_TURN_API_TOKEN
+        sync: false
