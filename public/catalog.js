@@ -40,12 +40,14 @@ const Addon = {
   },
 };
 
+// Addons must be https (http only for local development addons).
+const usableAddonUrl = (u) => /^https:\/\/[^/]+/i.test(u || '') || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(`${u || ''}/`);
+
 // Accepts what Torrentio's "Copy link" gives (https://…/manifest.json or stremio://…/manifest.json).
 function normalizeAddonUrl(input) {
   let u = String(input || '').trim().replace(/^stremio:\/\//i, 'https://');
   u = u.replace(/\/manifest\.json.*$/i, '').replace(/\/configure\/?$/i, '').replace(/\/+$/, '');
-  const localDev = /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//i.test(`${u}/`);
-  if (!/^https:\/\/[^/]+/i.test(u) && !localDev) throw new Error('Paste the full link that starts with https:// or stremio://');
+  if (!usableAddonUrl(u)) throw new Error('Paste the full link that starts with https:// or stremio://');
   return u;
 }
 
@@ -76,12 +78,22 @@ async function seriesMeta(imdbId) {
   return { ...meta, videos };
 }
 
-async function fetchStreams(type, id, base = Addon.base) {
-  if (!base) throw new Error('No addon connected');
-  const { streams = [] } = await getJson(`${base}/stream/${type}/${id}.json`, 30000).catch((err) => {
-    throw new Error(`Torrentio didn’t answer (${err.message}). Try again in a moment.`);
-  });
-  return streams;
+// Every stream addon this phone can use: the Stremio account's addons, plus a manually connected link.
+function streamSources() {
+  const list = [...Stremio.addons];
+  if (Addon.base && !list.some((a) => a.base === Addon.base)) list.push({ name: Addon.name || 'Torrentio', base: Addon.base });
+  return list;
+}
+const hasSources = () => streamSources().length > 0;
+
+async function fetchStreams(type, id) {
+  const sources = streamSources();
+  if (!sources.length) throw new Error('No addon connected');
+  const results = await Promise.allSettled(sources.map((src) =>
+    getJson(`${src.base}/stream/${type}/${id}.json`, 30000).then((d) => (d.streams || []).map((s) => ({ ...s, _addon: src.name })))));
+  const failed = results.filter((r) => r.status === 'rejected');
+  if (failed.length === results.length) throw new Error(`Your addons didn’t answer (${failed[0].reason.message}). Try again in a moment.`);
+  return results.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
 }
 
 // ---------- reading a stream ----------
@@ -113,6 +125,7 @@ function describeStream(s) {
     av1: /\bAV1\b/i.test(text),
     hdr: /\b(HDR(10\+?)?|DV|DoVi|Dolby ?Vision)\b/i.test(text),
     playable: !!s.url,
+    addon: s._addon || '',
   };
 }
 
@@ -140,12 +153,11 @@ function sourceOf(stream, ctx) {
 // Find the same file through this phone's own addon/debrid account.
 const ownCache = new Map();
 async function resolveOwn(src) {
-  const base = Addon.base;
-  if (!base || !src?.id) return null;
-  const key = `${base}|${src.id}|${src.infoHash}|${src.filename}`;
+  if (!hasSources() || !src?.id) return null;
+  const key = `${streamSources().map((a) => a.base).join(',')}|${src.id}|${src.infoHash}|${src.filename}`;
   if (!ownCache.has(key)) {
     ownCache.set(key, (async () => {
-      const streams = (await fetchStreams(src.type, src.id, base)).filter((s) => s.url);
+      const streams = (await fetchStreams(src.type, src.id)).filter((s) => s.url);
       const sameHash = src.infoHash ? streams.filter((s) => hashOf(s) === src.infoHash) : [];
       const match =
         sameHash.find((s) => src.fileIdx == null || fileIdxOf(s) === src.fileIdx || !Number.isFinite(fileIdxOf(s))) ||

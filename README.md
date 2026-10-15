@@ -16,7 +16,7 @@ A private, two-person watch party. Both phones play the **same video file direct
                           WebRTC voice/video call, directly phone to phone
 ```
 
-- **Picking:** search inside the app. You get the same stream list Torrentio gives Stremio (quality, size, `[RD+]` cached), sorted so streams that play **with sound** in a browser come first. DTS/AC3/TrueHD audio is flagged "may be silent".
+- **Picking:** your Continue watching / library / catalogues, or search. Continuing something starts where you left off in Stremio. You get the same stream list Torrentio gives Stremio (quality, size, `[RD+]` cached), sorted so streams that play **with sound** in a browser come first. DTS/AC3/TrueHD audio is flagged "may be silent".
 - **Each phone uses its own debrid:** the room shares *which file* (torrent hash). A phone with its own Torrentio link fetches that same file through its own account. Without one, it plays the picker's link and warns that the debrid service may flag account sharing.
 - **Sync:** the server holds the playback state against a shared clock. Phones correct small drift by playing slightly faster or slower (0.94× to 1.06×), and seek only for big jumps. Pressing play waits until both phones have the video ready. If either stalls, both pause and resume together.
 - **Subtitles:** chosen per person from Stremio's OpenSubtitles addon, with ±0.5s timing nudges. Your choice of language is remembered.
@@ -27,8 +27,10 @@ A private, two-person watch party. Both phones play the **same video file direct
 ## First-time setup (each of you, once)
 
 1. Install: **Android app** from https://together-i1b2.onrender.com/app (also linked on the home screen on Android phones), or open the site in Chrome → ⋮ → *Install app*.
-2. Open 🔍 → **Setup**. Follow the three steps: on torrentio.strem.fun/configure, pick your debrid service and paste its API key, tap **Copy link**, then paste it into Together.
-   The setup link stays on that phone. Note that a **stream link** you pick also has your debrid key inside it (Torrentio builds it that way). It passes through the room, in memory only and never logged, so the other phone can fall back to it. Only connect your account in rooms you share with someone you trust.
+2. Open 🔍 → **Account** → **Sign in with Stremio**. Open the short link.stremio.com code, approve it (signing in on Stremio's own page if needed), and you're done. Together then uses **all your Stremio stream addons** (Torrentio + debrid and the rest) and shows your **Continue watching**, **library** and your addons' catalogues.
+   - Or use email + password. It's sent straight from the phone to Stremio's API, never through Together's server, and not stored.
+   - Or, under *Advanced*, paste just a Torrentio link.
+   The Stremio auth key stays on that phone. Note that a **stream link** you pick has your debrid key inside it (that's how Torrentio builds links). It passes through the room, in memory only and never logged, so the other phone can fall back to it. Only use rooms with someone you trust.
 
 ## Movie night
 

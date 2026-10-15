@@ -215,7 +215,7 @@ async function loadSource(s) {
     src = `/stream/${roomId}?v=${s.seq}`;
   } else if (s.loadedById === clientId) {
     how = 'mine';
-  } else if (s.source && Addon.base) {
+  } else if (s.source && hasSources()) {
     showNotice('Getting the same file from your own account…');
     try {
       const own = await resolveOwn(s.source);
@@ -229,9 +229,9 @@ async function loadSource(s) {
   if (seq !== sourceSeq) return;
   showNotice();
   const picked = s.loadedById !== clientId ? `${s.loadedBy} picked ${s.title || 'something'}. ` : '';
-  if (how === 'own') toast(`${picked}Streaming from your own ${Addon.name || 'addon'}`, 4000);
+  if (how === 'own') toast(`${picked}Streaming through your own ${Stremio.signedIn ? 'Stremio addons' : Addon.name || 'addon'}`, 4000);
   else if (how === 'notfound') toast(`${picked}Your addon doesn’t have this exact file, so this phone is playing ${s.loadedBy}’s link instead`, 6000);
-  else if (how === 'shared') toast(`${picked}Playing ${s.loadedBy}’s debrid link. Connect your own Torrentio in Setup to keep their account safe.`, 7000);
+  else if (how === 'shared') toast(`${picked}Playing ${s.loadedBy}’s debrid link. Sign in to your own Stremio (Account tab) to keep their account safe.`, 7000);
   else if (picked) toast(picked.trim());
   video.src = src;
   video.load();
@@ -419,7 +419,7 @@ $('#chatToggle').addEventListener('click', () => {
 $('#nextBtn').addEventListener('click', async () => {
   const src = state?.source;
   if (src?.type !== 'series') return;
-  if (!Addon.base) return toast('Connect your Torrentio in Setup to pick episodes');
+  if (!hasSources()) return toast('Sign in to Stremio (in Account) to pick episodes');
   toast('Finding the next episode…');
   try {
     const { meta, next, id, stream } = await nextEpisode(src);

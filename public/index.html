@@ -105,7 +105,7 @@
     <nav class="tabs">
       <button type="button" data-tab="search">Search</button>
       <button type="button" data-tab="paste">Paste link</button>
-      <button type="button" data-tab="setup">Setup</button>
+      <button type="button" data-tab="setup">Account</button>
     </nav>
 
     <section id="view-search" class="view">
@@ -113,6 +113,7 @@
         <input id="searchInput" type="search" enterkeyhint="search" placeholder="Movie or show name">
       </form>
       <div id="results" class="grid"></div>
+      <div id="home-rows"></div>
     </section>
 
     <section id="view-series" class="view" hidden></section>
@@ -136,22 +137,52 @@
     </section>
 
     <section id="view-setup" class="view" hidden>
-      <h3>Your Torrentio</h3>
-      <p id="addonStatus" class="muted"></p>
-      <ol class="steps">
-        <li>Open <a href="https://torrentio.strem.fun/configure" target="_blank" rel="noopener">torrentio.strem.fun/configure</a>.</li>
-        <li>Under <b>Debrid provider</b>, pick yours and paste its API key (Real-Debrid: <a href="https://real-debrid.com/apitoken" target="_blank" rel="noopener">real-debrid.com/apitoken</a>). Change other options if you like.</li>
-        <li>At the bottom, tap <b>Copy link</b> (next to Install) and paste it here.</li>
-      </ol>
-      <form id="addonForm" autocomplete="off">
-        <input id="addonInput" required placeholder="https://torrentio.strem.fun/…/manifest.json">
-        <p id="addonError" class="warn" hidden></p>
-        <div class="row end">
-          <button id="addonRemove" type="button" hidden>Disconnect</button>
-          <button id="addonSave" class="primary" type="submit">Connect</button>
+      <div id="acctSignedIn" class="callout" hidden>
+        <p><span class="ok-text">Signed in to Stremio</span><br><b id="acctUser"></b></p>
+        <p id="acctAddons" class="muted"></p>
+        <div class="row end"><button id="acctRefresh" type="button">Refresh addons</button><button id="acctSignOut" type="button">Sign out</button></div>
+      </div>
+
+      <div id="acctSignedOut">
+        <h3>Sign in with Stremio</h3>
+        <p class="hint">Brings your addons (Torrentio + debrid and the rest), your library and Continue watching. Each of you signs in on your own phone, so each phone streams through its own account.</p>
+        <button id="linkStart" class="primary wide" type="button">Sign in with Stremio</button>
+        <div id="linkBox" class="callout" hidden>
+          <p>Open this link and approve. If you’re not signed in there, sign in first, on Stremio’s own page:</p>
+          <a id="linkUrl" class="code-link" href="#" target="_blank" rel="noopener"></a>
+          <p id="linkWait" class="muted">Waiting for approval…</p>
+          <button id="linkCancel" type="button">Cancel</button>
         </div>
-      </form>
-      <p class="hint">This setup link stays on <b>this phone</b>. Each of you should connect your own; then each phone streams the same file from its own account. Without one, this phone plays the link the other person picked, which a debrid service may flag as account sharing. Stream links also contain the picker’s debrid key and are shared with the other phone, so only use rooms with someone you trust.</p>
+        <details id="pwLogin">
+          <summary>Or use email and password</summary>
+          <form id="pwForm" autocomplete="on">
+            <input id="pwEmail" type="email" autocomplete="username" required placeholder="Stremio email">
+            <input id="pwPass" type="password" autocomplete="current-password" required placeholder="Password">
+            <p id="pwError" class="warn" hidden></p>
+            <button id="pwSubmit" class="primary" type="submit">Sign in</button>
+            <p class="hint">Sent straight from this phone to Stremio over HTTPS, never through Together’s server.</p>
+          </form>
+        </details>
+      </div>
+
+      <details id="manualAddon">
+        <summary>Advanced: connect a Torrentio link instead</summary>
+        <p id="addonStatus" class="muted"></p>
+        <ol class="steps">
+          <li>Open <a href="https://torrentio.strem.fun/configure" target="_blank" rel="noopener">torrentio.strem.fun/configure</a>.</li>
+          <li>Under <b>Debrid provider</b>, pick yours and paste its API key. Change other options if you like.</li>
+          <li>At the bottom, tap <b>Copy link</b> (next to Install) and paste it here.</li>
+        </ol>
+        <form id="addonForm" autocomplete="off">
+          <input id="addonInput" required placeholder="https://torrentio.strem.fun/…/manifest.json">
+          <p id="addonError" class="warn" hidden></p>
+          <div class="row end">
+            <button id="addonRemove" type="button" hidden>Disconnect</button>
+            <button id="addonSave" class="primary" type="submit">Connect</button>
+          </div>
+        </form>
+      </details>
+      <p class="hint">Your Stremio sign-in stays on <b>this phone</b>. Stream links contain the picker’s debrid key and are shared with the other phone, so only use rooms with someone you trust.</p>
     </section>
   </dialog>
 
@@ -174,6 +205,7 @@
   <div id="toast" role="status" aria-live="polite"></div>
   <script src="/app.js"></script>
   <script src="/catalog.js"></script>
+  <script src="/stremio.js"></script>
   <script src="/subs.js"></script>
   <script src="/browse.js"></script>
 </body>

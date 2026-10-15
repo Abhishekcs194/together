@@ -370,3 +370,19 @@ video::cue { background: #000b; font-size: 1em; }
 /* Keyboard focus only; no ring when a dialog opens or a button is tapped */
 button:focus:not(:focus-visible) { outline: none; }
 button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Account + home rows ---------- */
+.primary.wide { width: 100%; margin: 4px 0 14px; }
+.code-link { font: 600 22px/1.3 ui-monospace, monospace; color: var(--accent); word-break: break-all; }
+#acctSignedIn .row.end button:not(.primary), #linkCancel { padding: 10px 12px; color: var(--muted); }
+#acctSignedOut h3 { margin-top: 0; }
+#pwForm { display: grid; gap: 10px; margin-top: 10px; }
+#manualAddon { margin: 20px 0 12px; }
+#manualAddon[open] summary { margin-bottom: 8px; }
+.home-row { margin: 0 -16px 18px; }
+.home-row h4 { margin: 0 16px 8px; font-size: 16px; }
+.strip { display: grid; grid-auto-flow: column; grid-auto-columns: 112px; gap: 10px; overflow-x: auto; padding: 0 16px; scrollbar-width: none; }
+.strip::-webkit-scrollbar { display: none; }
+.small { font-size: 13px; }
+.poster { position: relative; }
+.progress { position: absolute; left: 0; bottom: 0; height: 4px; background: var(--accent); }
