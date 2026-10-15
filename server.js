@@ -1,6 +1,7 @@
 'use strict';
-// Together — a two-person watch party. Each viewer streams the video directly
-// (full quality); only play/pause/seek, chat and call signalling go through here.
+// Together — a watch party for up to MAX_MEMBERS people. Each viewer streams the
+// video directly (full quality); only play/pause/seek, chat and call signalling
+// go through here.
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -10,7 +11,7 @@ const { WebSocketServer } = require('ws');
 
 const PORT = Number(process.env.PORT) || 3000;
 const PUBLIC = path.join(__dirname, 'public');
-const MAX_MEMBERS = 2;
+const MAX_MEMBERS = 6;
 const ROOM_TTL_MS = 12 * 60 * 60 * 1000; // forget empty rooms after 12h
 
 const MIME = {
@@ -158,8 +159,13 @@ function handle(ws, room, me, msg) {
     case 'react':
       return broadcast(room, { t: 'react', emoji: String(msg.emoji || '').slice(0, 16), fromId: me });
 
-    case 'rtc': // WebRTC signalling: relay to the other person
-    case 'call':
+    case 'rtc': { // WebRTC signalling: point-to-point (each pair negotiates its own connection)
+      const target = room.members.get(String(msg.to || ''));
+      if (target) send(target.ws, { ...msg, fromId: me });
+      return;
+    }
+
+    case 'call': // start/cam/end: informational, everyone in the room hears it
       return broadcast(room, { ...msg, fromId: me }, me);
 
     case 'playerError':

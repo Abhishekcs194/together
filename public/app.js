@@ -26,6 +26,7 @@ function toast(text, ms = 2600) {
 }
 
 const clientId = store.get('tg.id') || (() => { const id = randomId(); store.set('tg.id', id); return id; })();
+const MAX_ROOM_SIZE = 6; // must match server.js MAX_MEMBERS
 const video = $('#video');
 
 // ---------- routing: /, /r/<room>, /share?url=… ----------
@@ -108,7 +109,7 @@ function onMessage(m) {
       break;
     case 'full':
       leaving = true;
-      alertScreen('This room already has two people in it.');
+      alertScreen(`This room already has the maximum of ${MAX_ROOM_SIZE} people in it.`);
       break;
     case 'pong': {
       const now = Date.now(), rtt = now - m.c;
@@ -119,13 +120,20 @@ function onMessage(m) {
       break;
     }
     case 'peers': {
-      const hadPartner = !!partner();
+      const prevIds = new Set(peers.map((p) => p.id));
       peers = m.peers;
+      const nowIds = new Set(peers.map((p) => p.id));
       setPresence();
       if (m.joined && m.joined !== myName) sysChat(`${m.joined} joined`);
       if (m.left) {
         sysChat(`${m.left} left`);
-        if (hadPartner && !partner()) endCall(false);
+        for (const id of prevIds) if (!nowIds.has(id)) teardownPeer(id);
+      }
+      if (localStream) {
+        applyGroupVideoCap();
+        // Someone who joined after we started the call won't have been offered a connection
+        // yet (nobody auto-connects to a joiner); pull them in since we're already in the call.
+        for (const id of nowIds) if (!prevIds.has(id)) getPc(id).catch((err) => console.warn(err));
       }
       break;
     }
@@ -146,14 +154,18 @@ function onMessage(m) {
   }
 }
 
-function partner() { return peers.find((p) => p.id !== clientId); }
-function nameOfId(id) { return peers.find((p) => p.id === id)?.name || 'Your partner'; }
+function partners() { return peers.filter((p) => p.id !== clientId); }
+function nameOfId(id) { return peers.find((p) => p.id === id)?.name || 'Someone'; }
 
 function setPresence() {
-  const p = partner();
+  const others = partners();
   const online = ws?.readyState === WebSocket.OPEN;
-  $('#presenceDot').classList.toggle('on', !!p && online);
-  $('#presenceText').textContent = p ? `${p.name} is here` : 'Waiting for your partner · tap to invite';
+  $('#presenceDot').classList.toggle('on', !!others.length && online);
+  let text;
+  if (!others.length) text = 'Waiting for others · tap to invite';
+  else if (others.length <= 3) text = `${others.map((p) => p.name).join(', ')} ${others.length > 1 ? 'are' : 'is'} here`;
+  else text = `${others.length} others here`;
+  $('#presenceText').textContent = text;
 }
 
 $('#inviteBtn').addEventListener('click', async () => {
@@ -566,62 +578,152 @@ function floatEmoji(emoji) {
   setTimeout(() => el.remove(), 2700);
 }
 
-// ---------- voice / video call (WebRTC, phone to phone) ----------
-let pcPromise = null, pc = null, localStream = null, camSender = null, audioSender = null, makingOffer = false, ignoreOffer = false, iceCache = null;
+// ---------- voice / video call (WebRTC, mesh across everyone in the room) ----------
+// Each remote peer gets its own RTCPeerConnection (keyed by id) and its own perfect-negotiation
+// state, since any pair can independently add/renegotiate media without colliding with others.
+const pcs = new Map(); // peerId -> { pc, makingOffer, ignoreOffer, camSender, audioSender }
+const tiles = new Map(); // peerId -> { el, video, initial }
+const peerCamOff = new Map(); // peerId -> bool
+let localStream = null, iceCache = null;
+// Mesh calls are O(n) uploads per phone for video; past this many call participants that stops
+// being realistic on mobile uplink/battery, so video auto-suppresses (audio keeps working for
+// everyone). See HANDOVER.md §9 for the reasoning.
+const MAX_CALL_VIDEO = 4;
 
-async function getPc() {
-  if (pcPromise) return pcPromise;
-  pcPromise = (async () => {
-    iceCache ??= (await (await fetch('/api/ice')).json()).iceServers;
-    pc = new RTCPeerConnection({ iceServers: iceCache });
-    pc.onicecandidate = ({ candidate }) => candidate && send({ t: 'rtc', candidate });
-    pc.onnegotiationneeded = async () => {
-      try {
-        makingOffer = true;
-        await pc.setLocalDescription();
-        send({ t: 'rtc', description: pc.localDescription });
-      } catch (err) { console.warn(err); } finally { makingOffer = false; }
-    };
-    pc.ontrack = ({ track, streams }) => {
-      const pv = $('#partnerVideo');
-      pv.srcObject = streams[0] || new MediaStream([track]);
-      pv.play().catch(() => {});
-      track.onmute = track.onunmute = track.onended = updateBubble;
-      showBubble();
-    };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === 'failed') pc.restartIce();
-      if (pc.connectionState === 'connected') updateBubble();
-    };
-    return pc;
-  })();
-  return pcPromise;
+function ensureTile(id) {
+  let t = tiles.get(id);
+  if (t) return t;
+  const el = document.createElement('div');
+  el.className = 'tile';
+  el.innerHTML = '<video autoplay playsinline></video><span class="initial"></span>';
+  const video = el.querySelector('video');
+  const initial = el.querySelector('.initial');
+  initial.textContent = (nameOfId(id) || '?').slice(0, 1).toUpperCase();
+  $('#bubbleTiles').append(el);
+  t = { el, video, initial };
+  tiles.set(id, t);
+  $('#bubble').hidden = false;
+  return t;
+}
+function removeTile(id) {
+  const t = tiles.get(id);
+  if (!t) return;
+  t.el.remove();
+  tiles.delete(id);
+  if (!tiles.size) $('#bubble').hidden = true;
+}
+function updateTile(id) {
+  const t = tiles.get(id);
+  if (!t) return;
+  const s = t.video.srcObject;
+  const live = !peerCamOff.get(id) && s?.getVideoTracks().some((tr) => tr.readyState === 'live' && !tr.muted);
+  t.el.classList.toggle('novideo', !live);
 }
 
-// "Perfect negotiation": either side can add or remove media without the offers colliding.
-const polite = () => clientId < (partner()?.id || '');
-async function onRtc({ description, candidate }) {
-  const pc = await getPc();
+async function getPc(id) {
+  let entry = pcs.get(id);
+  // Connection already exists (e.g. created receive-only when their offer first arrived, before
+  // we'd pressed the call button ourselves): still make sure it carries our current local
+  // tracks, since whatever created it may have run before we had any.
+  if (entry) { ensureLocalTracks(entry); return entry.pc; }
+  const pc = new RTCPeerConnection({ iceServers: iceCache || [] });
+  entry = { pc, makingOffer: false, ignoreOffer: false, camSender: null, audioSender: null };
+  // Reserve this id before the first await below, so a second getPc(id) call that comes in
+  // while the ICE-server fetch is still in flight (e.g. an offer and a candidate for the same
+  // brand-new peer arriving back-to-back) reuses this connection instead of racing to create
+  // a second one.
+  pcs.set(id, entry);
+  if (!iceCache) {
+    try {
+      iceCache = (await (await fetch('/api/ice')).json()).iceServers;
+      pc.setConfiguration({ iceServers: iceCache });
+    } catch (err) { console.warn(err); }
+  }
+  pc.onicecandidate = ({ candidate }) => candidate && send({ t: 'rtc', to: id, candidate });
+  pc.onnegotiationneeded = async () => {
+    try {
+      entry.makingOffer = true;
+      await pc.setLocalDescription();
+      send({ t: 'rtc', to: id, description: pc.localDescription });
+    } catch (err) { console.warn(err); } finally { entry.makingOffer = false; }
+  };
+  pc.ontrack = ({ track, streams }) => {
+    const tile = ensureTile(id);
+    tile.video.srcObject = streams[0] || new MediaStream([track]);
+    tile.video.play().catch(() => {});
+    track.onmute = track.onunmute = track.onended = () => updateTile(id);
+    updateTile(id);
+  };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === 'failed') pc.restartIce();
+    if (pc.connectionState === 'connected') updateTile(id);
+  };
+  // Already in the call ourselves: hand this new connection our tracks right away.
+  ensureLocalTracks(entry);
+  return pc;
+}
+
+// Idempotent: adds whichever of our current local tracks this specific connection doesn't
+// already have a sender for. Safe to call whether the connection is brand new or pre-existing.
+function ensureLocalTracks(entry) {
+  if (!localStream) return;
+  for (const track of localStream.getTracks()) {
+    if (track.kind === 'video' ? entry.camSender : entry.audioSender) continue;
+    addTrackTo(entry, track);
+  }
+}
+
+function addTrackTo(entry, track) {
+  const sender = entry.pc.addTrack(track, localStream);
+  if (track.kind === 'video') {
+    entry.camSender = sender;
+    // A disabled track still sends black frames over the wire, so if video is currently
+    // suppressed (manually or by the group-size cap), stop sending outright.
+    if (!track.enabled) sender.replaceTrack(null).catch(() => {});
+  } else if (track.kind === 'audio') {
+    entry.audioSender = sender;
+    // Give Opus a bitrate floor so generic bandwidth estimation can't starve voice
+    // quality if it dips (e.g. while the movie itself is being fetched on the same
+    // network/device). 64-96kbps is plenty for speech and won't meaningfully compete.
+    try {
+      const params = sender.getParameters();
+      params.encodings ??= [{}];
+      params.encodings[0].maxBitrate = 96000;
+      params.encodings[0].priority = 'high';
+      params.encodings[0].networkPriority = 'high';
+      sender.setParameters(params).catch((err) => console.warn(err));
+    } catch (err) { console.warn(err); }
+  }
+}
+
+// "Perfect negotiation" per pair: either side of any pair can add/remove media without the
+// offers colliding, independent of what's happening on their connections to everyone else.
+const polite = (id) => clientId < id;
+async function onRtc({ description, candidate, fromId }) {
+  if (!fromId) return;
+  const pc = await getPc(fromId);
+  const entry = pcs.get(fromId);
   if (description) {
-    const collision = description.type === 'offer' && (makingOffer || pc.signalingState !== 'stable');
-    ignoreOffer = !polite() && collision;
-    if (ignoreOffer) return;
+    const collision = description.type === 'offer' && (entry.makingOffer || pc.signalingState !== 'stable');
+    entry.ignoreOffer = !polite(fromId) && collision;
+    if (entry.ignoreOffer) return;
     await pc.setRemoteDescription(description);
     if (description.type === 'offer') {
       await pc.setLocalDescription();
-      send({ t: 'rtc', description: pc.localDescription });
+      send({ t: 'rtc', to: fromId, description: pc.localDescription });
     }
   } else if (candidate) {
-    try { await pc.addIceCandidate(candidate); } catch (err) { if (!ignoreOffer) console.warn(err); }
+    try { await pc.addIceCandidate(candidate); } catch (err) { if (!entry.ignoreOffer) console.warn(err); }
   }
 }
 
 async function startCall() {
-  if (!partner()) return toast('Your partner needs to be in the room first');
+  const targets = partners();
+  if (!targets.length) return toast('Someone else needs to be in the room first');
   if (localStream) return;
   try {
     localStream = await navigator.mediaDevices.getUserMedia({
-      // Both phones play the movie out loud (no headphones), so each mic also picks up
+      // Everyone's phone plays the movie out loud (no headphones), so each mic also picks up
       // its own speaker output. echoCancellation is built for exactly that and stays on.
       // autoGainControl is turned off deliberately: it keeps re-adjusting mic gain in
       // reaction to the movie's changing volume/dynamics, which is what causes the
@@ -637,68 +739,59 @@ async function startCall() {
       return toast('Microphone permission is needed for the call');
     }
   }
-  const pc = await getPc();
-  for (const track of localStream.getTracks()) {
-    const sender = pc.addTrack(track, localStream);
-    if (track.kind === 'video') camSender = sender;
-    if (track.kind === 'audio') {
-      audioSender = sender;
-      // Give Opus a bitrate floor so generic bandwidth estimation can't starve voice
-      // quality if it dips (e.g. while the movie itself is being fetched on the same
-      // network/device). 64-96kbps is plenty for speech and won't meaningfully compete.
-      try {
-        const params = sender.getParameters();
-        params.encodings ??= [{}];
-        params.encodings[0].maxBitrate = 96000;
-        params.encodings[0].priority = 'high';
-        params.encodings[0].networkPriority = 'high';
-        await sender.setParameters(params);
-      } catch (err) { console.warn(err); }
-    }
-  }
   $('#selfVideo').srcObject = localStream;
   $('#selfVideo').hidden = !localStream.getVideoTracks().length;
   $('#callbar').hidden = false;
   $('#callBtn').classList.add('on');
   setToggle('#micBtn', true);
   setToggle('#camBtn', !!localStream.getVideoTracks().length);
+  if (targets.length + 1 > MAX_CALL_VIDEO) setCamEnabled(false, { announce: false });
+  for (const peer of targets) await getPc(peer.id);
   send({ t: 'call', action: 'start' });
-  showBubble();
 }
 
 function endCall(notify = true) {
   if (notify) send({ t: 'call', action: 'end' });
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
-  camSender = null;
-  audioSender = null;
-  pc?.close();
-  pc = null;
-  pcPromise = null;
-  makingOffer = ignoreOffer = false;
-  $('#partnerVideo').srcObject = null;
+  for (const entry of pcs.values()) entry.pc.close();
+  pcs.clear();
+  $('#bubbleTiles').innerHTML = '';
+  tiles.clear();
+  peerCamOff.clear();
   $('#selfVideo').srcObject = null;
   $('#bubble').hidden = true;
   $('#callbar').hidden = true;
   $('#callBtn').classList.remove('on');
 }
 
-let callPromptShown = false, partnerCamOff = false;
+// One person leaving the mesh (hung up, or left the room) — not necessarily everyone.
+function teardownPeer(id) {
+  const entry = pcs.get(id);
+  if (entry) { entry.pc.close(); pcs.delete(id); }
+  removeTile(id);
+  peerCamOff.delete(id);
+  if (localStream && !pcs.size) endCall(false); // no one left to call with; stop our own media too
+}
+
+let callPromptShown = false;
 function onCallSignal(m) {
-  if (m.action === 'start') partnerCamOff = false;
-  if (m.action === 'start' && !localStream) {
-    if (callPromptShown) return;
-    callPromptShown = true;
-    toast(`${nameOfId(m.fromId)} started a call · tap the camera button to join`, 6000);
-    $('#callBtn').classList.add('on');
-    navigator.vibrate?.([60, 80, 60]);
-    setTimeout(() => (callPromptShown = false), 6000);
+  if (m.action === 'start') {
+    peerCamOff.delete(m.fromId);
+    if (!localStream) {
+      if (callPromptShown) return;
+      callPromptShown = true;
+      toast(`${nameOfId(m.fromId)} started a call · tap the camera button to join`, 6000);
+      $('#callBtn').classList.add('on');
+      navigator.vibrate?.([60, 80, 60]);
+      setTimeout(() => (callPromptShown = false), 6000);
+    }
   } else if (m.action === 'cam') {
-    partnerCamOff = !m.on;
-    updateBubble();
+    peerCamOff.set(m.fromId, !m.on);
+    updateTile(m.fromId);
   } else if (m.action === 'end') {
-    if (pc || localStream) toast(`${nameOfId(m.fromId)} ended the call`);
-    endCall(false);
+    if (pcs.has(m.fromId)) toast(`${nameOfId(m.fromId)} ended the call`);
+    teardownPeer(m.fromId);
   }
 }
 
@@ -713,26 +806,35 @@ $('#micBtn').addEventListener('click', () => {
 $('#camBtn').addEventListener('click', () => {
   const t = localStream?.getVideoTracks()[0];
   if (!t) return;
-  t.enabled = !t.enabled;
-  setToggle('#camBtn', t.enabled);
-  $('#selfVideo').hidden = !t.enabled;
-  // Stop sending video entirely (saves bandwidth for the movie) and tell the other phone.
-  camSender?.replaceTrack(t.enabled ? t : null);
-  send({ t: 'call', action: 'cam', on: t.enabled });
+  if (!t.enabled && partners().length + 1 > MAX_CALL_VIDEO) {
+    return toast(`Video turns on automatically with ${MAX_CALL_VIDEO} or fewer people on the call`, 4000);
+  }
+  setCamEnabled(!t.enabled);
 });
 function setToggle(sel, on) {
   $(sel).classList.toggle('off', !on);
 }
-
-function showBubble() {
-  $('#partnerInitial').textContent = (partner()?.name || '?').slice(0, 1).toUpperCase();
-  $('#bubble').hidden = false;
-  updateBubble();
+function setCamEnabled(on, { announce = true } = {}) {
+  const t = localStream?.getVideoTracks()[0];
+  if (!t) return;
+  t.enabled = on;
+  setToggle('#camBtn', on);
+  $('#selfVideo').hidden = !on;
+  // Stop sending video entirely when off (saves bandwidth for the movie, and for everyone
+  // else's uplink) rather than relying on track.enabled alone: a disabled track still sends
+  // black frames over the wire.
+  for (const entry of pcs.values()) entry.camSender?.replaceTrack(on ? t : null);
+  if (announce) send({ t: 'call', action: 'cam', on });
 }
-function updateBubble() {
-  const s = $('#partnerVideo').srcObject;
-  const live = !partnerCamOff && s?.getVideoTracks().some((t) => t.readyState === 'live' && !t.muted);
-  $('#bubble').classList.toggle('novideo', !live);
+// Called whenever the room's peer list changes while we're in a call, so a group that grows
+// past the mesh-video limit degrades to audio-only automatically instead of just getting worse.
+function applyGroupVideoCap() {
+  const t = localStream?.getVideoTracks()[0];
+  if (!t || !t.enabled) return;
+  if (partners().length + 1 > MAX_CALL_VIDEO) {
+    setCamEnabled(false);
+    toast(`Video turned off automatically — more than ${MAX_CALL_VIDEO} people are on the call now. Audio stays on.`, 6000);
+  }
 }
 
 // Drag the bubble anywhere; a quick tap toggles its size. Keep it fully on-screen (even after a

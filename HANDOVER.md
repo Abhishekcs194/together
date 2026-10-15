@@ -11,12 +11,13 @@ Everything needed to keep developing Together on another machine (e.g. a Windows
 
 ## 1. What it is and where it stands
 
-A private watch party for two phones. Both phones play the **same video file, each fetched directly from its source at full quality**, kept in sync by a small Node server. On top: a WebRTC video call, chat and emoji reactions. Movies and shows are picked inside the app from the user's own **Stremio** account (addons like Torrentio + debrid, library, Continue watching).
+A private watch party for up to six phones (`MAX_MEMBERS` in server.js). Everyone plays the **same video file, each fetched directly from its source at full quality**, kept in sync by a small Node server. On top: a WebRTC group video call (full mesh), chat and emoji reactions. Movies and shows are picked inside the app from the user's own **Stremio** account (addons like Torrentio + debrid, library, Continue watching).
 
 | Area | State |
 |---|---|
 | Sync (play/pause/seek, buffering holds, reconnects) | Done, tested (~40 ms gap between phones in tests) |
-| Video call, chat, reactions | Done, tested in two headless Chromes with fake cameras |
+| Room size (up to 6), group video call (mesh, video caps at 4 people) | Done, protocol-level tested (6-person join/reject, point-to-point rtc routing). **Not yet tried with more than 2 real phones.** |
+| Video call, chat, reactions | Done, tested in two headless Chromes with fake cameras (2-person case only so far) |
 | In-app browsing (Cinemeta), Torrentio streams, codec warnings | Done, tested against a stand-in Torrentio |
 | Each phone resolves the same file through its own debrid | Done, tested |
 | Subtitles (OpenSubtitles v3), next episode | Done, tested with the real services |
@@ -31,7 +32,7 @@ server.js               Node server: static files, WebSocket rooms, /api/ice, /a
                         /healthz, /app (APK), /.well-known/assetlinks.json, optional /stream proxy
 public/
   index.html            the whole UI (home, room, browse sheet, subtitles dialog)
-  app.js                connection, clock sync, playback sync, controls, chat, WebRTC call
+  app.js                connection, clock sync, playback sync, controls, chat, WebRTC group call (mesh)
   catalog.js            Cinemeta search/meta, stream addons, stream parsing + codec ranking,
                         "find the same file through my own addons", next episode
   stremio.js            Stremio sign-in (link code / password), addon collection, library
@@ -148,12 +149,15 @@ Re-running against the same server or Chrome profiles can produce two harmless f
 - **Browser codecs:** phones' browsers drop **DTS / AC3 / EAC3 / TrueHD** audio silently: the picture plays, with no sound. Streams are ranked to put AAC first, flagged "may be silent", and the player warns if no audio is being decoded (`webkitAudioDecodedByteCount`).
 - **Stremio APIs are called from the phone** (CORS is open). Link sign-in: `GET link.stremio.com/api/create?type=Create` → `{code, link}`, then poll `…/api/read?type=Read&code=…` until `result.authKey`. That shape was checked against stremio-core `LinkAuthKey`. Account data: `POST api.strem.io/api/{login, getUser, addonCollectionGet, datastoreGet, logout}`.
 - **Sync rule of thumb:** within ±0.15 s do nothing; up to 1.5 s play at 0.94× or 1.06×; beyond that seek, then wait 3 s before seeking again. Play is held while anyone is still loading.
-- **Calls** use WebRTC "perfect negotiation", so either side can add or remove media without offers colliding. Camera off = `replaceTrack(null)` plus a `call/cam` message, because a disabled track still sends black frames.
+- **Calls** use WebRTC "perfect negotiation" **per pair**: every member of a room gets their own `RTCPeerConnection` to every other member (a full mesh), each with independent negotiation state (`pcs` map in app.js keyed by peer id), so any pair can add/remove media without colliding with what any other pair is doing. Signalling (`rtc` messages) is point-to-point — `server.js` relays by an explicit `to` id instead of broadcasting — since broadcasting would otherwise hand every peer's offer/answer/ICE candidates to everyone else in the room, not just the intended target. Camera off = `replaceTrack(null)` on every connection's sender, plus a `call/cam` message, because a disabled track still sends black frames.
+- **Group call video cap:** a mesh is O(n) uploads per phone for video (each phone encodes and sends its own camera stream once per *other* participant). That stops being realistic on mobile uplink/battery past a handful of people, so video auto-suppresses (stays audio-only) once there are more than `MAX_CALL_VIDEO` (4, in app.js) people on the call — on starting a call, on someone new joining mid-call, and reversibly only via re-starting the call (it does not currently auto-*resume* video if the group shrinks back under the cap; see backlog). A real fix for bigger video calls is an SFU (media relay), not a bigger mesh cap — see the architecture explainer.
 - **Headless testing:** a background tab in headless Chrome doesn't load or play media, so use two Chrome instances.
 
 ## 9. Ideas / backlog
 
-- **Expand rooms past 2 people, target 6.** Sync/chat is cheap (small WebSocket messages, a free Render instance handles this trivially since media never touches the server, see §8) — the real ceiling is the **call**, which is a 2-person WebRTC mesh today. A mesh is O(n²) uploads per phone, so it stops being realistic on mobile uplink/battery above ~4 people. Two honest paths: (a) cap the synced-watch room at 6 but the *call* at 4 (mesh), with 5th/6th joining audio-only or call-less, or (b) build a real SFU (media relay) for the call, which needs actual server compute/bandwidth Render's free plan doesn't have — covered in the scaling path in the architecture explainer. Pick (a) first; it needs no new infra.
+- Auto re-enable video if the call shrinks back under `MAX_CALL_VIDEO` after being auto-suppressed (today it only re-evaluates on join/start, not on leave).
+- Test the 6-person room and group call with real phones, not just the protocol-level test (`test/protocol.js`) and the existing 2-phone headless Chrome tests (`test/call.js`, `test/e2e*.js`) — those haven't been extended past 2 participants yet.
+- Beyond ~4-person video (the current mesh cap): a real SFU (media relay) for the call, which needs actual server compute/bandwidth Render's free plan doesn't have — covered in the scaling path in the architecture explainer.
 - Always-on hosting (Starter plan) or a keep-alive ping; TURN for calls on mobile data.
 - Room state in Redis so deploys don't reset rooms.
 - Collapsible chat in upright phone view and in the wide-screen sidebar.

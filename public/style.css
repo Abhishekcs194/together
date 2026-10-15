@@ -198,26 +198,31 @@ details input { margin-top: 10px; }
   border-radius: 50%; background: var(--accent);
 }
 
-/* Partner camera bubble: draggable, tap to resize */
+/* Call bubble stack: one tile per connected peer, draggable as a group, tap to resize */
 #bubble {
   position: fixed; right: 12px; bottom: 140px; z-index: 6;
-  width: 104px; aspect-ratio: 3 / 4;
-  border-radius: 18px; overflow: hidden;
-  background: var(--panel-2); border: 2px solid var(--accent);
-  box-shadow: 0 8px 30px #000a; touch-action: none;
+  width: 104px; touch-action: none;
 }
 #bubble.large { width: 170px; }
-#bubble video { width: 100%; height: 100%; object-fit: cover; display: block; }
-#bubble.novideo #partnerVideo { visibility: hidden; }
-#partnerInitial {
+#bubbleTiles { display: flex; flex-direction: column; gap: 6px; }
+.tile {
+  position: relative; width: 100%; aspect-ratio: 3 / 4;
+  border-radius: 18px; overflow: hidden;
+  background: var(--panel-2); border: 2px solid var(--accent);
+  box-shadow: 0 8px 30px #000a;
+}
+.tile video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tile.novideo video { visibility: hidden; }
+.tile .initial {
   position: absolute; inset: 0; display: none; place-items: center;
   font: 600 36px ui-serif, Georgia, serif;
 }
-#bubble.novideo #partnerInitial { display: grid; }
+.tile.novideo .initial { display: grid; }
 #selfVideo {
   position: absolute; right: 4px; bottom: 4px;
-  width: 30% !important; height: auto !important; aspect-ratio: 3 / 4;
+  width: 30%; aspect-ratio: 3 / 4;
   border-radius: 8px; transform: scaleX(-1);
+  box-shadow: 0 4px 14px #000a; z-index: 1;
 }
 
 /* Landscape / fullscreen: the movie takes the whole screen, chat floats */

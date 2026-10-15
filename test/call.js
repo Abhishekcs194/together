@@ -19,11 +19,13 @@ async function page(url) {
   return { run, close: () => fetch(`${CDP}/json/close/${t.id}`) };
 }
 
+// With the mesh call model there's one RTCPeerConnection and one call tile per remote peer
+// (keyed by id); in this 2-person test there's exactly one of each, so grab "the" one.
 const status = `return {
-  conn: pc?.connectionState, local: !!localStream, bubble: !document.querySelector('#bubble').hidden,
-  novideo: document.querySelector('#bubble').classList.contains('novideo'),
-  remoteW: document.querySelector('#partnerVideo').videoWidth,
-  remoteTracks: document.querySelector('#partnerVideo').srcObject?.getTracks().map(t => t.kind + ':' + t.readyState).join(','),
+  conn: [...pcs.values()][0]?.pc.connectionState, local: !!localStream, bubble: !document.querySelector('#bubble').hidden,
+  novideo: document.querySelector('#bubbleTiles .tile')?.classList.contains('novideo') ?? null,
+  remoteW: document.querySelector('#bubbleTiles .tile video')?.videoWidth,
+  remoteTracks: [...(document.querySelector('#bubbleTiles .tile video')?.srcObject?.getTracks() || [])].map(t => t.kind + ':' + t.readyState).join(','),
   callbar: !document.querySelector('#callbar').hidden, toast: document.querySelector('#toast').textContent };`;
 
 (async () => {

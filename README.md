@@ -1,6 +1,6 @@
 # Together
 
-A private, two-person watch party. Both phones play the **same video file directly at full quality**, kept in sync to within a fraction of a second, with a built-in voice/video call, chat and emoji reactions. Nothing is screen-shared or re-encoded.
+A private watch party for up to **six people**. Every phone plays the **same video file directly at full quality**, kept in sync to within a fraction of a second, with a built-in voice/video call, chat and emoji reactions. Nothing is screen-shared or re-encoded.
 
 **Developers: start with [HANDOVER.md](HANDOVER.md)** (setup on a new machine, moving hosting, Android build, tests, decisions).
 
@@ -24,7 +24,7 @@ A private, two-person watch party. Both phones play the **same video file direct
 - **Subtitles:** chosen per person from Stremio's OpenSubtitles addon, with ±0.5s timing nudges. Your choice of language is remembered.
 - **Series:** season/episode picker. **Next episode** keeps the same release (quality/encoder), like Stremio's binge-watching.
 - **Reconnects:** if a phone backgrounds or drops signal, it rejoins and catches up.
-- **Call:** low-res camera (480p / 20fps) so the movie gets the bandwidth. Either person starts it; the other taps the camera button to join.
+- **Call:** low-res camera (480p / 20fps) so the movie gets the bandwidth. Anyone starts it; everyone else taps the camera button to join, and it's a real group call (every phone connects directly to every other phone). With more than 4 people on the call, video turns off automatically to keep uplink and battery usable on mobile — audio keeps working for everyone.
 
 ## First-time setup (each of you, once)
 
