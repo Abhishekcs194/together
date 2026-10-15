@@ -65,6 +65,11 @@ input:focus { border-color: var(--accent); }
   border-radius: var(--radius);
 }
 label { display: grid; gap: 6px; font-size: 14px; color: var(--muted); }
+.get-app {
+  justify-self: center; display: inline-flex; align-items: center; gap: 8px;
+  color: var(--accent); text-decoration: none; font-size: 15px; padding: 8px 12px;
+}
+.get-app svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 details summary { color: var(--muted); font-size: 14px; cursor: pointer; }
 details input { margin-top: 10px; }
 

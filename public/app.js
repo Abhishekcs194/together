@@ -41,6 +41,9 @@ if (path === '/share') {
 }
 
 $('#nameInput').value = store.get('tg.name', '');
+// Offer the Android app on Android phones, unless we're already running inside it (or an installed PWA).
+const standalone = matchMedia('(display-mode: standalone)').matches || document.referrer.startsWith('android-app://');
+$('#getApp').hidden = !/Android/i.test(navigator.userAgent) || standalone;
 if (roomId) $('#joinBtn').textContent = 'Join the room';
 
 $('#homeForm').addEventListener('submit', async (e) => {

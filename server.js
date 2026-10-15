@@ -20,6 +20,7 @@ const MIME = {
   '.webmanifest': 'application/manifest+json',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.apk': 'application/vnd.android.package-archive',
 };
 
 const ASSET_LINKS = [{
@@ -234,10 +235,9 @@ function serveStatic(req, res, pathname) {
   if (!file.startsWith(PUBLIC)) return res.writeHead(403).end();
   fs.readFile(file, (err, data) => {
     if (err) return res.writeHead(404).end('Not found');
-    res.writeHead(200, {
-      'Content-Type': MIME[path.extname(file)] || 'application/octet-stream',
-      'Cache-Control': 'no-cache',
-    });
+    const headers = { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream', 'Cache-Control': 'no-cache' };
+    if (file.endsWith('.apk')) headers['Content-Disposition'] = 'attachment; filename="Together.apk"';
+    res.writeHead(200, headers);
     res.end(data);
   });
 }
@@ -253,6 +253,7 @@ const server = http.createServer(async (req, res) => {
     return res.end(JSON.stringify({ id: crypto.randomBytes(6).toString('base64url') }));
   }
   if (pathname === '/healthz') return res.writeHead(200).end('ok');
+  if (pathname === '/app') return res.writeHead(302, { Location: '/Together.apk' }).end();
   if (pathname === '/.well-known/assetlinks.json') {
     // Lets the Android app (a Trusted Web Activity) open this site full-screen, without Chrome's URL bar.
     res.writeHead(200, { 'Content-Type': 'application/json' });

@@ -26,7 +26,7 @@ A private, two-person watch party. Both phones play the **same video file direct
 
 ## First-time setup (each of you, once)
 
-1. Install: **Android app** (`dist/Together.apk`, see below), or open the site in Chrome → ⋮ → *Install app*.
+1. Install: **Android app** from https://together-i1b2.onrender.com/app (also linked on the home screen on Android phones), or open the site in Chrome → ⋮ → *Install app*.
 2. Open 🔍 → **Setup**. Follow the three steps: on torrentio.strem.fun/configure, pick your debrid service and paste its API key, tap **Copy link**, then paste it into Together.
    The setup link stays on that phone. Note that a **stream link** you pick also has your debrid key inside it (Torrentio builds it that way). It passes through the room, in memory only and never logged, so the other phone can fall back to it. Only connect your account in rooms you share with someone you trust.
 
@@ -44,7 +44,7 @@ A **Paste link** tab is still there for any direct video link.
 
 ```
 cd android && JAVA_HOME=~/.local/jdk17 ANDROID_HOME=~/.local/android-sdk ./gradlew :app:assembleRelease \
-  && cp app/build/outputs/apk/release/app-release.apk ../dist/Together.apk
+  && cp app/build/outputs/apk/release/app-release.apk ../public/Together.apk
 ```
 
 Web changes need **no** new APK, because the app always loads the live site. Rebuild only to change the icon, name or package.
