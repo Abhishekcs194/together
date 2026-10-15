@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#120f16">
+  <title>Together</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <!-- Home: pick a name, start or join a room -->
+  <main id="home" class="screen">
+    <div class="brand">
+      <img src="/icon.svg" alt="" width="64" height="64">
+      <h1>Together</h1>
+      <p>Watch the same movie, at the same moment, from anywhere.</p>
+    </div>
+    <form id="homeForm" class="card" autocomplete="off">
+      <label>Your name
+        <input id="nameInput" maxlength="30" required placeholder="What should they call you?">
+      </label>
+      <button id="joinBtn" class="primary" type="submit">Start a room</button>
+      <details id="joinCode">
+        <summary>Have a room code?</summary>
+        <input id="codeInput" placeholder="Paste invite link or code">
+      </details>
+    </form>
+  </main>
+
+  <!-- Room -->
+  <main id="room" class="screen" hidden>
+    <header class="topbar">
+      <button id="inviteBtn" class="chip" type="button" title="Copy invite link">
+        <span class="dot" id="presenceDot"></span><span id="presenceText">Waiting for your partner</span>
+      </button>
+      <div class="actions">
+        <button id="chatToggle" class="icon" type="button" aria-label="Show chat" hidden><svg viewBox="0 0 24 24"><path d="M4 5h16v11H9l-5 4z"/></svg><span id="unread" hidden></span></button>
+        <button id="loadBtn" class="icon" type="button" aria-label="Load a movie"><svg viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></button>
+        <button id="callBtn" class="icon" type="button" aria-label="Start call"><svg viewBox="0 0 24 24"><path d="M15 10l5-3v10l-5-3zM3 7h12v10H3z"/></svg></button>
+      </div>
+    </header>
+
+    <section id="stage">
+      <video id="video" playsinline preload="auto"></video>
+      <div id="empty" class="overlay">
+        <p>Pick a movie in Stremio, copy its stream link, and paste it here.</p>
+        <button id="emptyLoadBtn" class="primary" type="button">Paste stream link</button>
+      </div>
+      <div id="notice" class="notice" hidden></div>
+      <button id="tapSync" class="overlay tap" type="button" hidden>Tap to join playback</button>
+      <div id="floaters" aria-hidden="true"></div>
+      <div id="controls">
+        <input id="seek" type="range" min="0" max="0" step="0.1" value="0" aria-label="Seek">
+        <div class="row">
+          <button id="back10" class="icon" type="button" aria-label="Back 10 seconds"><svg viewBox="0 0 24 24"><path d="M11 5L4 12l7 7M20 5l-7 7 7 7"/></svg></button>
+          <button id="playBtn" class="icon big" type="button" aria-label="Play"><svg viewBox="0 0 24 24"><path id="playIcon" d="M7 4l13 8-13 8z"/></svg></button>
+          <button id="fwd10" class="icon" type="button" aria-label="Forward 10 seconds"><svg viewBox="0 0 24 24"><path d="M13 5l7 7-7 7M4 5l7 7-7 7"/></svg></button>
+          <span id="time" class="time">0:00 / 0:00</span>
+          <button id="fsBtn" class="icon" type="button" aria-label="Fullscreen"><svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <section id="callbar" hidden>
+      <button id="micBtn" class="icon" type="button" aria-label="Mute microphone"><svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 1 3 3v6a3 3 0 0 1-6 0V6a3 3 0 0 1 3-3zM5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <button id="camBtn" class="icon" type="button" aria-label="Turn camera off"><svg viewBox="0 0 24 24"><path d="M15 10l5-3v10l-5-3zM3 7h12v10H3z"/></svg></button>
+      <button id="hangBtn" class="icon danger" type="button" aria-label="End call"><svg viewBox="0 0 24 24"><path d="M3 15c5-5 13-5 18 0l-3 3-3-2v-3a9 9 0 0 0-6 0v3l-3 2z"/></svg></button>
+    </section>
+
+    <section id="chat">
+      <ol id="messages"></ol>
+      <div id="reactions">
+        <button type="button">❤️</button><button type="button">😂</button><button type="button">😮</button>
+        <button type="button">😭</button><button type="button">🔥</button><button type="button">🥰</button>
+      </div>
+      <form id="chatForm" autocomplete="off">
+        <input id="chatInput" maxlength="1000" placeholder="Say something…" enterkeyhint="send">
+        <button class="primary" type="submit">Send</button>
+      </form>
+    </section>
+
+    <div id="bubble" hidden>
+      <video id="partnerVideo" autoplay playsinline></video>
+      <span id="partnerInitial"></span>
+      <video id="selfVideo" autoplay playsinline muted></video>
+    </div>
+  </main>
+
+  <dialog id="loadDialog">
+    <form id="loadForm" method="dialog" autocomplete="off">
+      <h2>Load a movie</h2>
+      <label>Stream link
+        <input id="urlInput" type="url" required placeholder="https://…">
+      </label>
+      <label><span>Title <span class="muted">(optional)</span></span>
+        <input id="titleInput" maxlength="200" placeholder="e.g. Before Sunrise">
+      </label>
+      <label class="check">
+        <input id="proxyInput" type="checkbox" checked>
+        <span>Stream through our server<br><small>Debrid services see one IP instead of two, so they don’t flag the account for sharing. Turn it off if the server is slow.</small></span>
+      </label>
+      <p id="urlWarn" class="warn" hidden></p>
+      <div class="row end">
+        <button value="cancel" type="button" id="loadCancel">Cancel</button>
+        <button class="primary" value="ok" type="submit">Load for both</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

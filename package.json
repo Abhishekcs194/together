@@ -1,0 +1,16 @@
+{
+  "name": "together",
+  "version": "0.1.0",
+  "description": "Two-person synced watch party with call and chat",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  }
+}
