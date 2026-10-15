@@ -153,6 +153,7 @@ Re-running against the same server or Chrome profiles can produce two harmless f
 
 ## 9. Ideas / backlog
 
+- **Expand rooms past 2 people, target 6.** Sync/chat is cheap (small WebSocket messages, a free Render instance handles this trivially since media never touches the server, see §8) — the real ceiling is the **call**, which is a 2-person WebRTC mesh today. A mesh is O(n²) uploads per phone, so it stops being realistic on mobile uplink/battery above ~4 people. Two honest paths: (a) cap the synced-watch room at 6 but the *call* at 4 (mesh), with 5th/6th joining audio-only or call-less, or (b) build a real SFU (media relay) for the call, which needs actual server compute/bandwidth Render's free plan doesn't have — covered in the scaling path in the architecture explainer. Pick (a) first; it needs no new infra.
 - Always-on hosting (Starter plan) or a keep-alive ping; TURN for calls on mobile data.
 - Room state in Redis so deploys don't reset rooms.
 - Collapsible chat in upright phone view and in the wide-screen sidebar.

@@ -172,7 +172,11 @@ details input { margin-top: 10px; }
   flex: 1; min-height: 0;
   display: flex; flex-direction: column;
   padding: 0 12px calc(10px + env(safe-area-inset-bottom));
+  position: relative;
 }
+/* Only needed when the chat panel floats over the video (landscape/fullscreen); hidden
+   elsewhere, where chat is just an always-visible section with no "close" concept. */
+#chatClose { display: none; }
 #messages {
   flex: 1; overflow-y: auto; list-style: none; margin: 0; padding: 12px 0;
   display: flex; flex-direction: column; gap: 6px;
@@ -225,9 +229,11 @@ details input { margin-top: 10px; }
   #chat {
     position: fixed; right: 0; top: 0; bottom: 0; width: min(340px, 45vw);
     background: #120f16e6; backdrop-filter: blur(8px); z-index: 5;
-    padding-top: 10px; border-left: 1px solid var(--line);
+    padding-top: 48px; border-left: 1px solid var(--line);
   }
   #room:not(.chat-open) #chat { display: none; }
+  /* Always-reachable close control, inside the panel that can otherwise cover #chatToggle. */
+  #chatClose { display: grid; position: absolute; top: 4px; right: 4px; z-index: 1; }
   #callbar { position: fixed; left: 12px; bottom: 70px; z-index: 5; flex-direction: column; border: 0; padding: 0; }
   #bubble { bottom: 70px; }
   #room.chat-open #bubble { right: calc(min(340px, 45vw) + 12px); }

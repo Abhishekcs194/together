@@ -383,10 +383,15 @@ function wake() {
   $('#room').classList.remove('idle');
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => {
-    if (state && !state.paused && !scrubbing) { $('#stage').classList.add('idle'); $('#room').classList.add('idle'); }
+    // Never go idle while chat is open: that would fade/disable the topbar (and its close
+    // button) behind the chat panel, with nothing left on screen able to bring it back.
+    if (state && !state.paused && !scrubbing && !$('#room').classList.contains('chat-open')) {
+      $('#stage').classList.add('idle'); $('#room').classList.add('idle');
+    }
   }, 3500);
 }
 $('#stage').addEventListener('pointerdown', wake);
+$('#chat').addEventListener('pointerdown', wake);
 video.addEventListener('play', wake);
 
 $('#fsBtn').addEventListener('click', async () => {
@@ -400,21 +405,36 @@ $('#fsBtn').addEventListener('click', async () => {
 });
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) screen.orientation?.unlock?.();
+  // A bubble position dragged in one fullscreen/orientation state can be stale (off-screen, or
+  // sitting on top of #fsBtn) in another; drop any inline position so it snaps back to whatever
+  // the CSS for the new mode defines.
+  resetBubblePosition();
   layoutForOrientation();
 });
 
 // Landscape: movie fills the screen and chat becomes a toggleable side panel.
 const landscape = matchMedia('(orientation: landscape) and (max-height: 600px)');
+let wasLandscape = landscape.matches;
 function layoutForOrientation() {
   $('#chatToggle').hidden = !landscape.matches;
   if (!landscape.matches) $('#room').classList.remove('chat-open');
+  if (landscape.matches !== wasLandscape) {
+    wasLandscape = landscape.matches;
+    resetBubblePosition();
+  }
 }
 landscape.addEventListener('change', layoutForOrientation);
 layoutForOrientation();
-$('#chatToggle').addEventListener('click', () => {
+function toggleChat() {
+  wake(); // make sure the topbar/panel isn't mid fade-out when chat opens or closes
   $('#room').classList.toggle('chat-open');
   $('#unread').hidden = true;
-});
+}
+$('#chatToggle').addEventListener('click', toggleChat);
+// Dedicated close button inside the chat panel itself: in the landscape/fullscreen layout the
+// panel can cover #chatToggle (same top-right corner, higher z-index), so closing can't depend
+// on reaching a button that might be hidden underneath it.
+$('#chatClose').addEventListener('click', toggleChat);
 
 $('#nextBtn').addEventListener('click', async () => {
   const src = state?.source;
@@ -547,7 +567,7 @@ function floatEmoji(emoji) {
 }
 
 // ---------- voice / video call (WebRTC, phone to phone) ----------
-let pcPromise = null, pc = null, localStream = null, camSender = null, makingOffer = false, ignoreOffer = false, iceCache = null;
+let pcPromise = null, pc = null, localStream = null, camSender = null, audioSender = null, makingOffer = false, ignoreOffer = false, iceCache = null;
 
 async function getPc() {
   if (pcPromise) return pcPromise;
@@ -601,7 +621,14 @@ async function startCall() {
   if (localStream) return;
   try {
     localStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      // Both phones play the movie out loud (no headphones), so each mic also picks up
+      // its own speaker output. echoCancellation is built for exactly that and stays on.
+      // autoGainControl is turned off deliberately: it keeps re-adjusting mic gain in
+      // reaction to the movie's changing volume/dynamics, which is what causes the
+      // audible "pumping"/crappy sound over time. A steady gain sounds better than an
+      // auto-adjusting one here. noiseSuppression stays on since it's comparatively
+      // subtle and still helps with residual hiss.
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false },
       // Small, low-frame-rate camera so the call never competes with the movie for bandwidth.
       video: { facingMode: 'user', width: { ideal: 480 }, height: { ideal: 640 }, frameRate: { ideal: 20, max: 24 } },
     });
@@ -614,6 +641,20 @@ async function startCall() {
   for (const track of localStream.getTracks()) {
     const sender = pc.addTrack(track, localStream);
     if (track.kind === 'video') camSender = sender;
+    if (track.kind === 'audio') {
+      audioSender = sender;
+      // Give Opus a bitrate floor so generic bandwidth estimation can't starve voice
+      // quality if it dips (e.g. while the movie itself is being fetched on the same
+      // network/device). 64-96kbps is plenty for speech and won't meaningfully compete.
+      try {
+        const params = sender.getParameters();
+        params.encodings ??= [{}];
+        params.encodings[0].maxBitrate = 96000;
+        params.encodings[0].priority = 'high';
+        params.encodings[0].networkPriority = 'high';
+        await sender.setParameters(params);
+      } catch (err) { console.warn(err); }
+    }
   }
   $('#selfVideo').srcObject = localStream;
   $('#selfVideo').hidden = !localStream.getVideoTracks().length;
@@ -630,6 +671,7 @@ function endCall(notify = true) {
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
   camSender = null;
+  audioSender = null;
   pc?.close();
   pc = null;
   pcPromise = null;
@@ -693,7 +735,25 @@ function updateBubble() {
   $('#bubble').classList.toggle('novideo', !live);
 }
 
-// Drag the bubble anywhere; a quick tap toggles its size.
+// Drag the bubble anywhere; a quick tap toggles its size. Keep it fully on-screen (even after a
+// resize/rotation changes the viewport) and out of #stage's control row (where #fsBtn lives) so
+// a dragged bubble can never end up off-screen or swallowing taps meant for the fullscreen button.
+function clampBubblePos(left, top) {
+  const b = $('#bubble');
+  left = Math.min(Math.max(0, left), innerWidth - b.offsetWidth);
+  top = Math.min(Math.max(0, top), innerHeight - b.offsetHeight);
+  if (!landscape.matches) {
+    // Portrait/non-fullscreen layout: #stage (and its control row, incl. #fsBtn) sits at the top
+    // of the screen. Never let the bubble be dragged up over it.
+    const stageBottom = $('#stage').getBoundingClientRect().bottom;
+    top = Math.max(top, Math.min(stageBottom, innerHeight - b.offsetHeight));
+  }
+  return { left, top };
+}
+function resetBubblePosition() {
+  const b = $('#bubble');
+  b.style.left = b.style.top = b.style.right = b.style.bottom = '';
+}
 (() => {
   const b = $('#bubble');
   let start = null;
@@ -707,13 +767,19 @@ function updateBubble() {
     const dx = e.clientX - start.x, dy = e.clientY - start.y;
     if (Math.abs(dx) + Math.abs(dy) > 6) start.moved = true;
     if (!start.moved) return;
-    const left = Math.min(Math.max(0, start.left + dx), innerWidth - b.offsetWidth);
-    const top = Math.min(Math.max(0, start.top + dy), innerHeight - b.offsetHeight);
+    const { left, top } = clampBubblePos(start.left + dx, start.top + dy);
     Object.assign(b.style, { left: `${left}px`, top: `${top}px`, right: 'auto', bottom: 'auto' });
   });
   b.addEventListener('pointerup', () => {
     if (start && !start.moved) b.classList.toggle('large');
     start = null;
+  });
+  // A position dragged for one viewport size can land off-screen (or over #fsBtn) after the
+  // viewport changes shape, e.g. rotating the phone. Re-clamp whenever that happens.
+  addEventListener('resize', () => {
+    if (!b.style.left && !b.style.top) return; // still at its default CSS-defined position
+    const { left, top } = clampBubblePos(parseFloat(b.style.left) || 0, parseFloat(b.style.top) || 0);
+    Object.assign(b.style, { left: `${left}px`, top: `${top}px` });
   });
 })();
 
